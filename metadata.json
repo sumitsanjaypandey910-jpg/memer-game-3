@@ -1,0 +1,7 @@
+{
+  "name": "Light Bulb Memory",
+  "description": "A memory game where players memorize and locate glowing light bulbs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
