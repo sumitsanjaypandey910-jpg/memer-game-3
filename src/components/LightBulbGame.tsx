@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
-import { Play, Sparkles, Sliders, RefreshCw, Zap } from 'lucide-react';
+import { Play, Sparkles, Sliders, RotateCcw, Volume2, VolumeX, Music, Award } from 'lucide-react';
 import {
   GameState,
   GameMode,
@@ -17,18 +17,17 @@ import { HowToPlayModal } from './HowToPlayModal';
 import { GameOverModal } from './GameOverModal';
 import { SettingsModal } from './SettingsModal';
 
-const HIGH_SCORE_KEY = 'bulb_memory_highscore_v1';
+const HIGH_SCORE_KEY = 'bulb_memory_highscore_v2';
 
 export const LightBulbGame: React.FC<LightBulbGameProps> = ({
   initialMode = 'classic',
   targetCount = 3,
-  gridSize = { rows: 3, cols: 3 },
+  gridSize = { rows: 3, cols: 2 }, // 2 columns x 3 rows matching user screenshot
   memorizeSeconds = 3,
   onGameOver,
   onScoreChange,
   onLevelComplete,
   className = '',
-  standalone = true,
 }) => {
   // Settings
   const [settings, setSettings] = useState<GameSettings>({
@@ -46,11 +45,12 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
   // Game State
   const [gameMode, setGameMode] = useState<GameMode>(initialMode);
   const [gameState, setGameState] = useState<GameState>('idle');
+  const [isPaused, setIsPaused] = useState<boolean>(false);
   const [gridItems, setGridItems] = useState<BulbItem[]>([]);
   const [foundTargetIds, setFoundTargetIds] = useState<number[]>([]);
   const [wrongTargetIds, setWrongTargetIds] = useState<number[]>([]);
 
-  // Scores and Progress
+  // Scoring & Progression
   const [score, setScore] = useState<number>(0);
   const [highScore, setHighScore] = useState<number>(() => {
     try {
@@ -61,20 +61,21 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
     }
   });
   const [level, setLevel] = useState<number>(1);
+  const totalLevelsInSet = 5;
   const [streak, setStreak] = useState<number>(0);
   const [bestStreak, setBestStreak] = useState<number>(0);
   const [lives, setLives] = useState<number>(3);
 
-  // Statistics
+  // Stats
   const [roundsCompleted, setRoundsCompleted] = useState<number>(0);
   const [totalCorrectClicks, setTotalCorrectClicks] = useState<number>(0);
   const [totalMistakeClicks, setTotalMistakeClicks] = useState<number>(0);
 
-  // Timer & Countdown
+  // Timers
   const [countdownLeft, setCountdownLeft] = useState<number>(settings.memorizeDurationSeconds);
   const [rushTimeLeft, setRushTimeLeft] = useState<number>(60);
 
-  // Audio UI states
+  // Audio state
   const [soundMuted, setSoundMuted] = useState<boolean>(false);
   const [musicPlaying, setMusicPlaying] = useState<boolean>(false);
 
@@ -83,12 +84,11 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isGameOverOpen, setIsGameOverOpen] = useState<boolean>(false);
 
-  // Refs for intervals & timeouts
+  // Refs
   const countdownIntervalRef = useRef<number | null>(null);
   const rushTimerRef = useRef<number | null>(null);
   const nextRoundTimeoutRef = useRef<number | null>(null);
 
-  // Clean up timers on unmount
   useEffect(() => {
     return () => {
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
@@ -97,7 +97,6 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
     };
   }, []);
 
-  // Update High Score helper
   const updateHighScore = useCallback((newScore: number) => {
     setHighScore((prev) => {
       if (newScore > prev) {
@@ -112,43 +111,39 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
     });
   }, []);
 
-  // Generate grid and choose random target bulbs
-  const createNewRoundGrid = useCallback(
-    (rows: number, cols: number, count: number) => {
-      const totalBulbs = rows * cols;
-      const targetCountClamped = Math.min(Math.max(1, count), totalBulbs);
+  // Generate random target indices
+  const createNewRoundGrid = useCallback((rows: number, cols: number, count: number) => {
+    const totalBulbs = rows * cols;
+    const targetCountClamped = Math.min(Math.max(1, count), totalBulbs);
 
-      // Pick random unique indices
-      const indices = Array.from({ length: totalBulbs }, (_, i) => i);
-      for (let i = indices.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [indices[i], indices[j]] = [indices[j], indices[i]];
+    const indices = Array.from({ length: totalBulbs }, (_, i) => i);
+    for (let i = indices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+    const targetIndices = new Set(indices.slice(0, targetCountClamped));
+
+    const items: BulbItem[] = [];
+    let idCounter = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const isTarget = targetIndices.has(idCounter);
+        items.push({
+          id: idCounter,
+          row: r,
+          col: c,
+          isTarget,
+          isRevealed: false,
+          isFound: false,
+          isWrongGuess: false,
+        });
+        idCounter++;
       }
-      const targetIndices = new Set(indices.slice(0, targetCountClamped));
+    }
+    return items;
+  }, []);
 
-      const items: BulbItem[] = [];
-      let idCounter = 0;
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const isTarget = targetIndices.has(idCounter);
-          items.push({
-            id: idCounter,
-            row: r,
-            col: c,
-            isTarget,
-            isRevealed: false,
-            isFound: false,
-            isWrongGuess: false,
-          });
-          idCounter++;
-        }
-      }
-      return items;
-    },
-    []
-  );
-
-  // Start a fresh round
+  // Start fresh round
   const startRound = useCallback(
     (currentLevel = level, currentMode = gameMode) => {
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
@@ -159,42 +154,36 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
       let targets = settings.targetsCount;
       let memorizeSec = settings.memorizeDurationSeconds;
 
-      // Progressive Mode scaling
       if (currentMode === 'progressive') {
         if (currentLevel === 1) {
           rows = 3;
-          cols = 3;
+          cols = 2;
           targets = 3;
           memorizeSec = 3.0;
         } else if (currentLevel === 2) {
           rows = 3;
-          cols = 3;
+          cols = 2;
           targets = 3;
           memorizeSec = 2.5;
         } else if (currentLevel === 3) {
           rows = 3;
-          cols = 4;
+          cols = 2;
           targets = 3;
-          memorizeSec = 2.5;
-        } else if (currentLevel === 4) {
-          rows = 3;
-          cols = 4;
-          targets = 4;
-          memorizeSec = 2.5;
-        } else if (currentLevel >= 5 && currentLevel <= 7) {
-          rows = 4;
-          cols = 4;
-          targets = 4;
           memorizeSec = 2.0;
-        } else if (currentLevel >= 8) {
+        } else if (currentLevel === 4) {
           rows = 4;
-          cols = 4;
-          targets = 5;
+          cols = 2;
+          targets = 4;
+          memorizeSec = 2.5;
+        } else if (currentLevel >= 5) {
+          rows = 3;
+          cols = 3;
+          targets = 4;
           memorizeSec = 2.0;
         }
       } else if (currentMode === 'rush') {
         rows = 3;
-        cols = 3;
+        cols = 2;
         targets = 3;
         memorizeSec = 2.0;
       }
@@ -205,11 +194,10 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
       setWrongTargetIds([]);
       setCountdownLeft(memorizeSec);
       setGameState('memorizing');
+      setIsPaused(false);
 
-      // Play bulb light up chime
       sound.playBulbLightUp();
 
-      // Countdown loop
       const startTime = Date.now();
       const durationMs = memorizeSec * 1000;
       let lastTickSecond = Math.ceil(memorizeSec);
@@ -235,7 +223,7 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
     [level, gameMode, settings, createNewRoundGrid]
   );
 
-  // Start Full Game
+  // Full Game Launch
   const startFullGame = (mode: GameMode = gameMode) => {
     setGameMode(mode);
     setScore(0);
@@ -247,6 +235,7 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
     setTotalCorrectClicks(0);
     setTotalMistakeClicks(0);
     setIsGameOverOpen(false);
+    setIsPaused(false);
 
     if (mode === 'rush') {
       setRushTimeLeft(60);
@@ -266,21 +255,19 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
     startRound(1, mode);
   };
 
-  // Trigger Victory Confetti
   const triggerConfetti = () => {
     try {
       confetti({
         particleCount: 50,
         spread: 60,
-        origin: { y: 0.6 },
-        colors: ['#fbbf24', '#f59e0b', '#fb7185', '#38bdf8', '#34d399'],
+        origin: { y: 0.55 },
+        colors: ['#facc15', '#f59e0b', '#38bdf8', '#34d399'],
       });
     } catch {
-      // ignore in environments without canvas
+      // ignore
     }
   };
 
-  // Handle Game Over
   const handleGameOver = useCallback(() => {
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
     if (rushTimerRef.current) clearInterval(rushTimerRef.current);
@@ -325,34 +312,28 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
 
   // Handle Bulb Click
   const handleBulbClick = (item: BulbItem) => {
-    if (gameState !== 'recalling' || item.isFound || item.isWrongGuess) return;
+    if (gameState !== 'recalling' || isPaused || item.isFound || item.isWrongGuess) return;
 
     if (item.isTarget) {
-      // Correct Match!
       const newFound = [...foundTargetIds, item.id];
       setFoundTargetIds(newFound);
       setTotalCorrectClicks((prev) => prev + 1);
 
-      // Audio feedback with ascending tone
       sound.playCorrectBulb(newFound.length);
 
-      // Points calculation
-      const currentStreakBonus = streak * 20;
-      const pointsEarned = 100 + currentStreakBonus;
-      const newScore = score + pointsEarned;
+      const streakBonus = streak * 25;
+      const points = 100 + streakBonus;
+      const newScore = score + points;
       setScore(newScore);
       updateHighScore(newScore);
       if (onScoreChange) onScoreChange(newScore);
 
-      // Update grid item state
       setGridItems((prev) =>
         prev.map((b) => (b.id === item.id ? { ...b, isFound: true } : b))
       );
 
-      // Check if all targets are found in this round
       const totalTargets = gridItems.filter((b) => b.isTarget).length;
       if (newFound.length >= totalTargets) {
-        // Round Clear!
         const nextStreak = streak + 1;
         setStreak(nextStreak);
         setBestStreak((prev) => Math.max(prev, nextStreak));
@@ -362,27 +343,20 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
         sound.playRoundSuccess();
         triggerConfetti();
 
-        if (nextStreak > 0 && nextStreak % 3 === 0) {
-          sound.playStreakBonus();
-        }
-
-        const nextLevel = level + 1;
+        const nextLevel = level >= totalLevelsInSet ? 1 : level + 1;
         setLevel(nextLevel);
         if (onLevelComplete) onLevelComplete(nextLevel, newScore);
 
-        // Next round after brief celebration
         nextRoundTimeoutRef.current = window.setTimeout(() => {
           startRound(nextLevel, gameMode);
-        }, 1300);
+        }, 1200);
       }
     } else {
-      // Wrong Guess!
       setWrongTargetIds((prev) => [...prev, item.id]);
       setTotalMistakeClicks((prev) => prev + 1);
       sound.playWrongBulb();
-      setStreak(0); // reset streak
+      setStreak(0);
 
-      // Mark bulb as wrong
       setGridItems((prev) =>
         prev.map((b) => (b.id === item.id ? { ...b, isWrongGuess: true } : b))
       );
@@ -397,20 +371,21 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
     }
   };
 
-  // Toggle Sound FX
   const handleToggleSound = () => {
     const nextMuted = !soundMuted;
     setSoundMuted(nextMuted);
     sound.setMuted(nextMuted);
   };
 
-  // Toggle Ambient Music
   const handleToggleMusic = () => {
     const isNowPlaying = sound.toggleAmbientMusic();
     setMusicPlaying(isNowPlaying);
   };
 
-  // Update Settings
+  const handleTogglePause = () => {
+    setIsPaused((prev) => !prev);
+  };
+
   const handleUpdateSettings = (newSettings: Partial<GameSettings>) => {
     setSettings((prev) => {
       const updated = { ...prev, ...newSettings };
@@ -424,204 +399,223 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
     });
   };
 
-  // Total targets in active grid
   const currentTotalTargets = gridItems.filter((b) => b.isTarget).length || settings.targetsCount;
 
-  // Grid columns styling helper
   const getGridColsClass = () => {
     const cols = gridItems.length > 0 ? Math.max(...gridItems.map((b) => b.col)) + 1 : settings.gridCols;
+    if (cols === 2) return 'grid-cols-2';
     if (cols === 3) return 'grid-cols-3';
     if (cols === 4) return 'grid-cols-4';
-    if (cols === 5) return 'grid-cols-5';
-    return 'grid-cols-3';
+    return 'grid-cols-2';
   };
 
   return (
-    <div
-      className={`w-full max-w-2xl mx-auto flex flex-col items-center select-none ${className}`}
-    >
-      {/* Game HUD (Score, Level, Lives, Targets, Sound controls) */}
-      <GameHUD
-        score={score}
-        highScore={highScore}
-        level={level}
-        streak={streak}
-        lives={lives}
-        maxLives={settings.allowMistakes === 99 ? 3 : settings.allowMistakes}
-        targetsFound={foundTargetIds.length}
-        totalTargets={currentTotalTargets}
-        gameState={gameState}
-        gameMode={gameMode}
-        timeLeft={gameMode === 'rush' ? rushTimeLeft : undefined}
-        soundMuted={soundMuted}
-        musicPlaying={musicPlaying}
-        onToggleSound={handleToggleSound}
-        onToggleMusic={handleToggleMusic}
-        onOpenHowToPlay={() => setIsHowToPlayOpen(true)}
-        onRestartRound={() => startRound(level, gameMode)}
-      />
+    <div className={`w-full max-w-md mx-auto flex flex-col items-center select-none ${className}`}>
+      {/* Mobile Screen Shell matching reference screenshot design */}
+      <div className="w-full rounded-[36px] bg-gradient-to-b from-[#104e63] via-[#0a3546] to-[#062431] border-2 border-[#185d75]/60 shadow-[0_20px_60px_rgba(3,18,26,0.8)] p-4 sm:p-6 relative overflow-hidden flex flex-col items-center">
+        
+        {/* Subtle Ambient Background Bokeh & Floating Dots (from reference) */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute top-1/4 -left-8 w-24 h-24 rounded-full bg-[#1b7392]/20 blur-2xl" />
+          <div className="absolute top-1/2 -right-8 w-32 h-32 rounded-full bg-[#175f78]/25 blur-3xl" />
+          <div className="absolute bottom-10 left-10 w-20 h-20 rounded-full bg-[#114b60]/30 blur-xl" />
+          
+          {/* Subtle decorative floating dots */}
+          <div className="absolute top-28 left-8 w-2 h-2 rounded-full bg-[#4188a0]/40" />
+          <div className="absolute top-36 right-6 w-3 h-3 rounded-full bg-[#4188a0]/30" />
+          <div className="absolute top-24 right-16 w-1.5 h-1.5 rounded-full bg-[#4188a0]/50" />
+          <div className="absolute bottom-32 left-6 w-2.5 h-2.5 rounded-full bg-[#4188a0]/35" />
+          <div className="absolute bottom-20 right-10 w-2 h-2 rounded-full bg-[#4188a0]/40" />
+        </div>
 
-      {/* Main Board Stage Card */}
-      <main className="w-full mt-4 bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-3xl p-4 sm:p-7 shadow-2xl relative overflow-hidden flex flex-col items-center">
-        {/* Atmospheric ambient top light bar */}
-        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-amber-500/50 to-transparent" />
+        {/* Top HUD: [ || ] [ 1/5     0 ] [ SFX/Help ] */}
+        <div className="w-full relative z-20 mb-4">
+          <GameHUD
+            score={score}
+            highScore={highScore}
+            level={level}
+            totalLevelsInSet={totalLevelsInSet}
+            streak={streak}
+            lives={lives}
+            maxLives={settings.allowMistakes === 99 ? 3 : settings.allowMistakes}
+            targetsFound={foundTargetIds.length}
+            totalTargets={currentTotalTargets}
+            gameState={gameState}
+            gameMode={gameMode}
+            isPaused={isPaused}
+            timeLeft={gameMode === 'rush' ? rushTimeLeft : undefined}
+            soundMuted={soundMuted}
+            musicPlaying={musicPlaying}
+            onTogglePause={handleTogglePause}
+            onToggleSound={handleToggleSound}
+            onToggleMusic={handleToggleMusic}
+            onOpenHowToPlay={() => setIsHowToPlayOpen(true)}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onRestartRound={() => startRound(level, gameMode)}
+          />
+        </div>
 
-        {/* Phase Notification Banner */}
-        <div className="w-full flex items-center justify-between min-h-[44px] mb-4 px-2">
+        {/* Instructional Header matching screenshot: "Replicate the memorized sequence" */}
+        <div className="w-full flex flex-col items-center justify-center my-3 relative z-10 min-h-[46px]">
           {gameState === 'memorizing' ? (
-            <div className="w-full flex flex-col items-center">
-              <div className="flex items-center gap-2 text-amber-300 font-bold text-sm tracking-wide animate-pulse">
-                <Sparkles className="w-4 h-4 text-amber-400" />
-                <span>Memorize the 3 Lit Light Bulbs! ({countdownLeft.toFixed(1)}s)</span>
+            <div className="flex flex-col items-center">
+              {/* Row of decorative cyan dots */}
+              <div className="flex items-center gap-2 mb-1.5 opacity-60">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#6db3c7]" />
+                <span className="w-2 h-2 rounded-full bg-[#8ec8d8]" />
+                <span className="w-2.5 h-2.5 rounded-full bg-[#b4e0ec] animate-ping" />
+                <span className="w-2 h-2 rounded-full bg-[#8ec8d8]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#6db3c7]" />
               </div>
-              {/* Progress countdown bar */}
-              <div className="w-full max-w-xs h-1.5 bg-slate-800 rounded-full mt-2 overflow-hidden border border-slate-700/50">
-                <motion.div
-                  className="h-full bg-gradient-to-r from-amber-400 to-amber-500"
-                  style={{
-                    width: `${Math.max(
-                      0,
-                      (countdownLeft / settings.memorizeDurationSeconds) * 100
-                    )}%`,
-                  }}
-                />
-              </div>
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight drop-shadow text-center">
+                Memorize the {currentTotalTargets} lit bulbs ({countdownLeft.toFixed(1)}s)
+              </h2>
             </div>
           ) : gameState === 'recalling' ? (
-            <div className="w-full flex items-center justify-between">
-              <span className="text-xs sm:text-sm font-semibold text-slate-300 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
-                Tap the {currentTotalTargets} bulbs that were glowing:
-              </span>
-              <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20">
-                {foundTargetIds.length} / {currentTotalTargets} Found
-              </span>
+            <div className="flex flex-col items-center">
+              {/* Row of decorative cyan dots */}
+              <div className="flex items-center gap-2 mb-1.5 opacity-60">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#6db3c7]" />
+                <span className="w-2 h-2 rounded-full bg-[#8ec8d8]" />
+                <span className="w-2.5 h-2.5 rounded-full bg-[#b4e0ec]" />
+                <span className="w-2 h-2 rounded-full bg-[#8ec8d8]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#6db3c7]" />
+              </div>
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight drop-shadow text-center">
+                Replicate the memorized sequence
+              </h2>
             </div>
           ) : gameState === 'round-success' ? (
-            <div className="w-full text-center">
-              <motion.span
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="text-emerald-400 font-bold text-sm sm:text-base flex items-center justify-center gap-2"
-              >
-                <Zap className="w-5 h-5 text-amber-400 fill-amber-400" />
-                Round Cleared! Perfect Recall!
-              </motion.span>
+            <div className="flex items-center gap-2 text-emerald-300 font-bold text-base sm:text-lg drop-shadow">
+              <Sparkles className="w-5 h-5 text-amber-300" />
+              <span>Perfect Recall!</span>
             </div>
           ) : (
-            <div className="w-full text-center text-xs sm:text-sm text-slate-400">
-              Select your mode and press <strong className="text-amber-400">Start Game</strong> to test your memory.
+            <h2 className="text-base sm:text-lg font-bold text-white tracking-tight drop-shadow text-center">
+              Remember the Bulbs
+            </h2>
+          )}
+        </div>
+
+        {/* Main Interactive Grid Stage */}
+        <div className="w-full relative z-10 flex flex-col items-center justify-center my-1">
+          {gameState !== 'idle' ? (
+            <div
+              className={`w-full max-w-sm grid ${getGridColsClass()} gap-2.5 sm:gap-3 bg-[#082937]/90 p-2.5 sm:p-3 rounded-2xl border-2 border-[#134d61]/70 shadow-2xl relative overflow-hidden`}
+            >
+              {/* Subtle inner grid glow */}
+              <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_40%,rgba(20,95,120,0.15),transparent_70%)]" />
+
+              {gridItems.map((item) => {
+                const order =
+                  item.isFound ? foundTargetIds.indexOf(item.id) + 1 : undefined;
+
+                return (
+                  <div
+                    key={item.id}
+                    className="aspect-[4/5] rounded-xl overflow-hidden border border-[#144f64]/50 shadow-inner"
+                  >
+                    <LightBulb
+                      item={item}
+                      isMemorizing={gameState === 'memorizing'}
+                      isRecalling={gameState === 'recalling' && !isPaused}
+                      disabled={gameState !== 'recalling' || isPaused}
+                      orderNumber={order}
+                      showSolution={gameState === 'game-over'}
+                      onClick={handleBulbClick}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Start Menu Hero Screen */
+            <div className="w-full max-w-sm flex flex-col items-center text-center py-6 px-4 bg-[#082937]/80 rounded-2xl border border-[#134d61]/70 shadow-2xl">
+              {/* Big Teardrop Bulb Graphic Preview */}
+              <div className="relative w-24 h-32 mb-4 flex items-center justify-center">
+                <svg viewBox="0 0 100 140" className="w-full h-full drop-shadow-xl">
+                  <defs>
+                    <radialGradient id="hero-bulb-glow" cx="45%" cy="50%" r="55%">
+                      <stop offset="0%" stopColor="#ffffff" />
+                      <stop offset="25%" stopColor="#fef08a" />
+                      <stop offset="60%" stopColor="#f59e0b" />
+                      <stop offset="100%" stopColor="#d97706" />
+                    </radialGradient>
+                    <linearGradient id="hero-socket" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#597d8b" />
+                      <stop offset="50%" stopColor="#7a9ea9" />
+                      <stop offset="100%" stopColor="#4a6975" />
+                    </linearGradient>
+                  </defs>
+                  {/* Socket */}
+                  <path d="M 36 10 L 64 10 L 64 26 L 36 26 Z" fill="url(#hero-socket)" stroke="#2d4954" strokeWidth="1.5" />
+                  <path d="M 33 26 L 67 26 L 67 38 L 33 38 Z" fill="url(#hero-socket)" stroke="#2d4954" strokeWidth="1.5" />
+                  {/* Glass */}
+                  <path
+                    d="M 33 38 C 22 55, 14 75, 18 95 C 22 114, 38 128, 50 134 C 62 128, 78 114, 82 95 C 86 75, 78 55, 67 38 Z"
+                    fill="url(#hero-bulb-glow)"
+                    stroke="#fde047"
+                    strokeWidth="2"
+                  />
+                  {/* Highlight */}
+                  <path d="M 28 55 C 22 70, 24 90, 34 110" fill="none" stroke="#ffffff" strokeWidth="3.5" strokeLinecap="round" opacity="0.9" />
+                  {/* Filament */}
+                  <circle cx="50" cy="85" r="8" fill="#ffffff" opacity="0.9" />
+                </svg>
+                <div className="absolute inset-0 bg-amber-400/25 blur-xl -z-10 rounded-full animate-pulse" />
+              </div>
+
+              <p className="text-xs sm:text-sm text-[#8ec8d8] mb-5 leading-relaxed">
+                Watch the 3 lit bulbs, memorize their locations, and replicate the sequence once they go dark.
+              </p>
+
+              {/* Game Mode Picker */}
+              <div className="grid grid-cols-2 gap-2 w-full mb-5">
+                {[
+                  { id: 'classic', label: 'Classic (2×3)', desc: '3 Bulbs, 6 Tiles' },
+                  { id: 'progressive', label: 'Progressive', desc: '5 Round Journey' },
+                  { id: 'rush', label: 'Rush Mode', desc: '60s Time Trial' },
+                  { id: 'practice', label: 'Custom Grid', desc: 'Adjust Settings' },
+                ].map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setGameMode(m.id as GameMode)}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      gameMode === m.id
+                        ? 'bg-amber-400/20 border-amber-400 text-amber-300 shadow-md shadow-amber-500/10'
+                        : 'bg-[#05202b] border-[#103d4e] text-[#8ec8d8] hover:bg-[#0c394a]'
+                    }`}
+                  >
+                    <div className="text-xs font-bold">{m.label}</div>
+                    <div className="text-[10px] text-[#5e8b99]">{m.desc}</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Start Button */}
+              <button
+                id="btn-start-game-main"
+                type="button"
+                onClick={() => startFullGame(gameMode)}
+                className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-300 to-amber-400 hover:from-amber-300 hover:to-amber-200 text-[#062330] font-black text-base transition-all shadow-xl shadow-amber-500/25 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+              >
+                <Play className="w-5 h-5 fill-[#062330] text-[#062330]" />
+                Start Game
+              </button>
             </div>
           )}
         </div>
 
-        {/* Light Bulbs Grid */}
-        {gameState !== 'idle' ? (
-          <div
-            className={`grid ${getGridColsClass()} gap-3 sm:gap-4 p-2 sm:p-4 w-full max-w-lg justify-items-center`}
-          >
-            {gridItems.map((item) => {
-              const order =
-                item.isFound ? foundTargetIds.indexOf(item.id) + 1 : undefined;
-
-              return (
-                <LightBulb
-                  key={item.id}
-                  item={item}
-                  isMemorizing={gameState === 'memorizing'}
-                  isRecalling={gameState === 'recalling'}
-                  disabled={gameState !== 'recalling'}
-                  orderNumber={order}
-                  showSolution={gameState === 'game-over'}
-                  onClick={handleBulbClick}
-                />
-              );
-            })}
-          </div>
-        ) : (
-          /* Start Screen Hero / Teaser Preview */
-          <div className="py-8 px-4 flex flex-col items-center text-center max-w-md">
-            <div className="relative mb-6">
-              <div className="w-24 h-24 rounded-3xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center shadow-[0_0_40px_rgba(245,158,11,0.25)]">
-                <svg viewBox="0 0 100 130" className="w-16 h-16 drop-shadow-lg">
-                  <path
-                    d="M 50 10 C 26 10, 15 28, 15 48 C 15 62, 28 74, 34 88 L 66 88 C 72 74, 85 62, 85 48 C 85 28, 74 10, 50 10 Z"
-                    fill="#fef08a"
-                    stroke="#f59e0b"
-                    strokeWidth="3"
-                  />
-                  <path
-                    d="M 42 48 Q 46 34, 50 48 Q 54 34, 58 48"
-                    fill="none"
-                    stroke="#ffffff"
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                  />
-                  <rect x="34" y="88" width="32" height="6" rx="2" fill="#64748b" />
-                  <rect x="36" y="94" width="28" height="6" rx="2" fill="#475569" />
-                  <rect x="38" y="100" width="24" height="6" rx="2" fill="#334155" />
-                </svg>
-              </div>
-              <motion.div
-                animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.9, 0.5] }}
-                transition={{ repeat: Infinity, duration: 2 }}
-                className="absolute inset-0 bg-amber-400/20 rounded-3xl blur-xl -z-10"
-              />
-            </div>
-
-            <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              Remember the Bulbs
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400 mt-2 leading-relaxed">
-              3 light bulbs will illuminate for a few seconds and disappear. Can you remember exactly where they were?
-            </p>
-
-            {/* Mode selection pills */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full mt-6 mb-6">
-              {[
-                { id: 'classic', label: 'Classic', desc: '3 Bulbs, 3x3' },
-                { id: 'progressive', label: 'Journey', desc: 'Level by Level' },
-                { id: 'rush', label: 'Rush', desc: '60s Speedrun' },
-                { id: 'practice', label: 'Practice', desc: 'Customizable' },
-              ].map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setGameMode(m.id as GameMode)}
-                  className={`p-2.5 rounded-xl border text-left transition-all ${
-                    gameMode === m.id
-                      ? 'bg-amber-500/15 border-amber-500 text-amber-300 shadow-md shadow-amber-500/10'
-                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                  }`}
-                >
-                  <div className="text-xs font-bold">{m.label}</div>
-                  <div className="text-[10px] text-slate-500">{m.desc}</div>
-                </button>
-              ))}
-            </div>
-
-            {/* Big Start Game Button */}
-            <button
-              id="btn-start-game-main"
-              type="button"
-              onClick={() => startFullGame(gameMode)}
-              className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-lg transition-all shadow-xl shadow-amber-500/25 flex items-center justify-center gap-3 cursor-pointer group"
-            >
-              <Play className="w-5 h-5 fill-slate-950 text-slate-950 transition-transform group-hover:scale-110" />
-              Start Game
-            </button>
-          </div>
-        )}
-
-        {/* Bottom Game Toolbar (Settings & Mode change when in game) */}
+        {/* Bottom Game Toolbar (Settings, Rules, Restart) */}
         {gameState !== 'idle' && (
-          <div className="w-full flex items-center justify-between pt-4 mt-3 border-t border-slate-800/60 text-xs">
+          <div className="w-full flex items-center justify-between pt-3 mt-2 border-t border-[#124254] text-xs text-[#8ec8d8] relative z-10">
             <div className="flex items-center gap-2">
               <button
                 id="btn-settings-open"
                 type="button"
                 onClick={() => setIsSettingsOpen(true)}
-                className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg hover:bg-[#0c394a] hover:text-white transition-colors"
               >
                 <Sliders className="w-3.5 h-3.5" />
                 <span>Settings</span>
@@ -630,7 +624,7 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
                 id="btn-howto-open"
                 type="button"
                 onClick={() => setIsHowToPlayOpen(true)}
-                className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg hover:bg-[#0c394a] hover:text-white transition-colors"
               >
                 <span>Rules</span>
               </button>
@@ -640,14 +634,55 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
               id="btn-reset-new-game"
               type="button"
               onClick={() => setGameState('idle')}
-              className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
+              className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg hover:bg-[#0c394a] hover:text-amber-300 transition-colors"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Main Menu</span>
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Menu</span>
             </button>
           </div>
         )}
-      </main>
+
+        {/* In-Game Pause Overlay */}
+        {isPaused && gameState !== 'idle' && (
+          <div className="absolute inset-0 z-30 bg-[#041a24]/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center text-[#e2f1f8]">
+            <div className="w-14 h-14 rounded-2xl bg-amber-400/20 text-amber-300 flex items-center justify-center mb-3 border border-amber-400/30 shadow-lg shadow-amber-500/15">
+              <Play className="w-6 h-6 fill-current ml-0.5" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-1">Game Paused</h3>
+            <p className="text-xs text-[#8ec8d8] mb-6">Take a breather and resume when ready.</p>
+
+            <div className="w-full max-w-xs space-y-2.5">
+              <button
+                type="button"
+                onClick={() => setIsPaused(false)}
+                className="w-full py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-[#062330] font-bold text-sm shadow-lg shadow-amber-500/20 transition-all"
+              >
+                Resume Game
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPaused(false);
+                  startRound(level, gameMode);
+                }}
+                className="w-full py-2.5 rounded-xl bg-[#093242] hover:bg-[#0d4054] text-[#8ec8d8] hover:text-white border border-[#144d62] text-xs font-semibold transition-all"
+              >
+                Restart Round
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPaused(false);
+                  setGameState('idle');
+                }}
+                className="w-full py-2.5 rounded-xl bg-[#05202b] hover:bg-[#082b39] text-[#5e8b99] hover:text-[#8ec8d8] text-xs transition-all"
+              >
+                Exit to Main Menu
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Modals */}
       <HowToPlayModal
