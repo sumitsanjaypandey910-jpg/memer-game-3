@@ -25,7 +25,7 @@ export function MyGameHub() {
       <LightBulbGame
         initialMode="classic"              // 'classic' | 'progressive' | 'rush' | 'practice'
         targetCount={3}                    // Number of lit bulbs to memorize (default: 3)
-        memorizeSeconds={3}                // Duration before bulbs disappear
+        memorizeSeconds={2}                // Duration before bulbs disappear (2s)
         gridSize={{ rows: 3, cols: 2 }}   // 2 cols x 3 rows (6 bulbs) or 3x3, 4x3
         onScoreChange={(score) => console.log('Score:', score)}
         onGameOver={(stats) => console.log('Game Over Stats:', stats)}
@@ -50,7 +50,7 @@ export function MyGameHub() {
         <LightBulbGame
           initialMode="classic"
           targetCount={3}
-          memorizeSeconds={3}
+          memorizeSeconds={2}
           gridSize={{ rows: 3, cols: 2 }}
           onGameOver={handleGameOver}
           onScoreChange={handleScoreChange}

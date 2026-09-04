@@ -23,7 +23,7 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
   initialMode = 'classic',
   targetCount = 3,
   gridSize = { rows: 3, cols: 2 }, // 2 columns x 3 rows matching user screenshot
-  memorizeSeconds = 3,
+  memorizeSeconds = 2,
   onGameOver,
   onScoreChange,
   onLevelComplete,
@@ -159,27 +159,27 @@ export const LightBulbGame: React.FC<LightBulbGameProps> = ({
           rows = 3;
           cols = 2;
           targets = 3;
-          memorizeSec = 3.0;
+          memorizeSec = 2.0;
         } else if (currentLevel === 2) {
           rows = 3;
           cols = 2;
           targets = 3;
-          memorizeSec = 2.5;
+          memorizeSec = 2.0;
         } else if (currentLevel === 3) {
           rows = 3;
           cols = 2;
           targets = 3;
-          memorizeSec = 2.0;
+          memorizeSec = 1.8;
         } else if (currentLevel === 4) {
           rows = 4;
           cols = 2;
           targets = 4;
-          memorizeSec = 2.5;
+          memorizeSec = 2.0;
         } else if (currentLevel >= 5) {
           rows = 3;
           cols = 3;
           targets = 4;
-          memorizeSec = 2.0;
+          memorizeSec = 1.8;
         }
       } else if (currentMode === 'rush') {
         rows = 3;

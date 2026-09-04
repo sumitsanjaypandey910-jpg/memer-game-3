@@ -44,7 +44,7 @@ export interface LightBulbGameProps {
   targetCount?: number;
   /** Grid dimensions (rows, cols) - default: 3x3 */
   gridSize?: { rows: number; cols: number };
-  /** Time in seconds to memorize lit bulbs (default: 3) */
+  /** Time in seconds to memorize lit bulbs (default: 2) */
   memorizeSeconds?: number;
   /** Callback fired when game finishes */
   onGameOver?: (stats: GameStats) => void;

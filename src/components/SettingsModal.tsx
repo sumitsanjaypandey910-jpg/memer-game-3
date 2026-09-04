@@ -123,7 +123,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </span>
               </div>
               <div className="grid grid-cols-4 gap-2">
-                {[1.5, 2.5, 3.0, 4.0].map((sec) => (
+                {[1.0, 1.5, 2.0, 3.0].map((sec) => (
                   <button
                     key={sec}
                     type="button"
@@ -134,7 +134,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         : 'bg-[#082b39] text-[#8ec8d8] border-[#103d4e] hover:bg-[#0d3d4f]'
                     }`}
                   >
-                    {sec}s
+                    {sec.toFixed(1)}s
                   </button>
                 ))}
               </div>
